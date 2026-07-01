@@ -13,12 +13,34 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
-DATA_PATH = Path(__file__).parent.parent / "data" / "india_cpi_2013_2025.csv"
+FILENAME = "india_cpi_2013_2025.csv"
 
 
-def load_cpi_series(path: Path = DATA_PATH) -> pd.DataFrame:
+def _find_data_file() -> Path:
+    """Locate the CPI CSV regardless of exact repo layout (handles both the
+    intended src/ + data/ structure and a flattened single-folder layout,
+    which can happen after uploading files via GitHub mobile)."""
+    here = Path(__file__).parent
+    candidates = [
+        here.parent / "data" / FILENAME,   # intended layout: src/ + data/
+        here / "data" / FILENAME,          # data/ alongside this file
+        here / FILENAME,                   # flattened: everything in one folder
+        here.parent / FILENAME,            # csv one level up
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    raise FileNotFoundError(
+        f"Could not find {FILENAME}. Looked in: {[str(c) for c in candidates]}. "
+        f"Make sure the CSV was uploaded to your repo."
+    )
+
+
+def load_cpi_series(path: Path = None) -> pd.DataFrame:
     """Load raw CPI level data, sorted chronologically, with a proper
     monthly DatetimeIndex (required by ARIMA/Prophet/most TS tooling)."""
+    if path is None:
+        path = _find_data_file()
     df = pd.read_csv(path, parse_dates=["date"])
     df = df.sort_values("date").reset_index(drop=True)
     df = df.set_index("date")
@@ -63,3 +85,4 @@ if __name__ == "__main__":
     train, test = chronological_split(df, test_months=12)
     print(f"\nTrain: {len(train)} months ({train.index.min().date()} to {train.index.max().date()})")
     print(f"Test:  {len(test)} months ({test.index.min().date()} to {test.index.max().date()})")
+    
