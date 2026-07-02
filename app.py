@@ -130,3 +130,29 @@ st.caption(
     "RAG-grounded LLM explanations (Phase 3) are the next layer to add on top of this working "
     "forecasting core."
 )
+
+# ---------------------------------------------------------------------------
+# Phase 3: AI Advisor - ask a question, grounded in RBI policy + the forecast
+# ---------------------------------------------------------------------------
+st.divider()
+st.subheader("🤖 Ask the AI Advisor")
+st.caption("Answers are grounded in the forecast above and real RBI policy statements "
+           "(Apr & Jun 2026 reviews) — not generated freely by the model.")
+
+user_question = st.text_input(
+    "Ask about the inflation outlook",
+    placeholder="e.g. Why might inflation be rising, and what is the RBI's official forecast?",
+)
+
+if st.button("Ask", type="primary") and user_question:
+    with st.spinner("Running forecast, retrieving RBI context, and generating explanation..."):
+        try:
+            from agent import run_advisor
+            answer = run_advisor(user_question)
+            st.success(answer)
+        except Exception as e:
+            st.error(
+                f"Could not get an answer: {e}\n\n"
+                "Make sure GEMINI_API_KEY is set in this app's Secrets "
+                "(App settings → Secrets)."
+    )
