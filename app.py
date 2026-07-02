@@ -126,9 +126,8 @@ else:
 
 st.divider()
 st.caption(
-    "This dashboard is Phase 2 (\"The Forecaster\") of the AI Inflation Advisor build plan. "
-    "RAG-grounded LLM explanations (Phase 3) are the next layer to add on top of this working "
-    "forecasting core."
+    "Phase 2 (\"The Forecaster\") — four models compared on real MoSPI CPI data. "
+    "Phase 3 (\"The Advisor\") — RAG-grounded LLM explanations — is live below."
 )
 
 # ---------------------------------------------------------------------------
@@ -148,11 +147,26 @@ if st.button("Ask", type="primary") and user_question:
     with st.spinner("Running forecast, retrieving RBI context, and generating explanation..."):
         try:
             from agent import run_advisor
-            answer = run_advisor(user_question)
+            answer, report, retrieval_mode = run_advisor(user_question)
             st.success(answer)
+
+            mode_label = "🧠 semantic (embeddings)" if retrieval_mode == "semantic" else "🔤 keyword (TF-IDF)"
+            st.caption(f"Retrieval mode: {mode_label}")
+
+            if report.overall_flag == "grounded":
+                st.caption(f"✅ Groundedness check passed — answer's numbers matched sources, "
+                           f"semantic overlap {report.semantic_overlap_score}")
+            elif report.overall_flag == "review":
+                st.caption(f"⚠️ Numbers checked out, but wording overlap with sources was low "
+                           f"({report.semantic_overlap_score}) — worth a manual look.")
+            else:
+                st.warning(f"⚠️ Groundedness check failed — the answer mentioned numbers not "
+                           f"found in the sources: {report.ungrounded_numbers}. Treat this "
+                           f"answer with caution.")
         except Exception as e:
             st.error(
                 f"Could not get an answer: {e}\n\n"
                 "Make sure GEMINI_API_KEY is set in this app's Secrets "
                 "(App settings → Secrets)."
-    )
+)
+        
