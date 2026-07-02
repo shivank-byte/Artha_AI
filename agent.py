@@ -23,7 +23,8 @@ import os
 from data_loader import load_cpi_series, add_pct_change, chronological_split
 from forecasting import linear_ar_benchmark
 from evaluation import evaluate_all
-from rag import build_chunk_index, tfidf_retrieve
+from rag import build_chunk_index, retrieve as rag_retrieve
+from groundedness import check_groundedness
 
 
 GUARDRAIL_SYSTEM_PROMPT = """You are an economic assistant explaining an India CPI \
@@ -91,8 +92,9 @@ def call_llm(system_prompt: str, user_prompt: str) -> str:
     return response.text
 
 
-def run_advisor(user_question: str) -> str:
-    """The full pipeline: forecast -> retrieve -> ground -> explain."""
+def run_advisor(user_question: str):
+    """The full pipeline: forecast -> retrieve -> ground -> explain -> verify.
+    Returns (answer: str, groundedness_report: GroundednessReport, retrieval_mode: str)."""
     # Step 1: run the forecast (this part IS tested, real, working)
     df = add_pct_change(load_cpi_series())
     series = df["cpi_pct_change"].dropna()
@@ -110,13 +112,20 @@ def run_advisor(user_question: str) -> str:
 
     # Step 2: retrieve relevant RBI policy context (this part IS tested, real, working)
     chunks = build_chunk_index()
-    retrieved = tfidf_retrieve(user_question, chunks, top_k=3)
+    retrieved, retrieval_mode = rag_retrieve(user_question, chunks, top_k=3)
 
     # Step 3: build the grounded prompt (pure string logic, tested implicitly above)
     prompt = build_grounded_prompt(forecast_summary, retrieved, user_question)
 
     # Step 4: call the LLM (NOT tested here -- needs a real API key)
-    return call_llm(GUARDRAIL_SYSTEM_PROMPT, prompt)
+    answer = call_llm(GUARDRAIL_SYSTEM_PROMPT, prompt)
+
+    # Step 5: verify the answer actually stayed grounded in the sources it
+    # was given -- the system prompt ASKS for this, this step CHECKS it.
+    all_source_text = forecast_summary + "\n" + "\n".join(c.text for c, _ in retrieved)
+    report = check_groundedness(answer, all_source_text)
+
+    return answer, report, retrieval_mode
 
 
 def run_advisor_debug(user_question: str):
@@ -137,7 +146,7 @@ def run_advisor_debug(user_question: str):
         f"Model's forecast for that same month: {preds[-1]:+.3f}%."
     )
     chunks = build_chunk_index()
-    retrieved = tfidf_retrieve(user_question, chunks, top_k=3)
+    retrieved, retrieval_mode = rag_retrieve(user_question, chunks, top_k=3)
     prompt = build_grounded_prompt(forecast_summary, retrieved, user_question)
     return prompt
 
@@ -152,14 +161,17 @@ if __name__ == "__main__":
     print(prompt)
 
     print("\n" + "=" * 70)
-    print("UNTESTED PORTION: the actual LLM call")
+    print("UNTESTED PORTION: the actual LLM call + groundedness check")
     print("=" * 70)
     try:
-        answer = run_advisor(question)
-        print(answer)
+        answer, report, retrieval_mode = run_advisor(question)
+        print(f"(retrieval mode used: {retrieval_mode})")
+        print("ANSWER:", answer)
+        print("\nGROUNDEDNESS REPORT:", report)
     except (RuntimeError, ModuleNotFoundError, ImportError) as e:
         print(f"Could not call LLM: {e}")
         print("\nExpected in this sandbox (no internet, no API key). "
               "Everything above the LLM call is real, working code, confirmed "
               "on your real data. Install google-generativeai and set "
               "GEMINI_API_KEY to run this part on your machine.")
+    
